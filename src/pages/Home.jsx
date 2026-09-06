@@ -1,7 +1,8 @@
-import { 
-  Home, Users, Briefcase, Calendar, Bell, MessageSquare, 
-  Settings as SettingsIcon, Music, Search, Heart, MessageCircle, Share2, 
-  MoreHorizontal, MapPin, Star, LogOut
+import {
+  Home, Users, Briefcase, Calendar, Bell, MessageSquare,
+  Settings as SettingsIcon, Music, Search, Heart, MessageCircle, Share2,
+  MoreHorizontal, MapPin, Star, LogOut,
+  HomeIcon
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link } from 'react-router-dom';
@@ -44,9 +45,13 @@ function HomePage() {
             <Briefcase size={16} /> Post MO
           </button>
           <Bell size={20} className="text-muted" style={{ cursor: 'pointer' }} />
-          <MessageSquare size={20} className="text-muted" style={{ cursor: 'pointer' }} />
+          <Link to="/network" title="Messages & Network">
+            <MessageSquare size={20} className="text-muted" style={{ cursor: 'pointer' }} />
+          </Link>
           <div className="w-8 h-8 rounded-full bg-gray-500 flex-shrink-0 overflow-hidden" style={{ cursor: 'pointer' }}>
-            <img src={profile?.avatar_url || 'https://i.pravatar.cc/150?img=11'} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <Link to="/settings">
+              <img src={profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop'} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            </Link>
           </div>
         </div>
       </nav>
@@ -58,10 +63,22 @@ function HomePage() {
         <aside className="left-panel flex-col gap-4" style={{ display: 'flex' }}>
           <div className="glass-panel p-4 flex-col items-center" style={{ textAlign: 'center', display: 'flex' }}>
             <div className="w-20 h-20 rounded-full flex-shrink-0 overflow-hidden mb-2" style={{ border: '2px solid var(--accent-primary)' }}>
-              <img src={profile?.avatar_url || 'https://i.pravatar.cc/150?img=11'} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <img src={profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop'} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
             <h2 className="text-lg font-bold m-0" style={{ fontSize: '1.125rem' }}>{profile?.full_name || 'Loading...'}</h2>
-            <p className="text-sm text-muted mb-4">{profile?.role || 'Setting up profile...'}</p>
+            <p className="text-sm text-muted mb-1">{profile?.role || 'Setting up profile...'}</p>
+
+            {profile?.location && (
+              <p className="text-xs text-muted flex items-center justify-center gap-1 mb-2" style={{ color: 'var(--accent-secondary)' }}>
+                <MapPin size={12} /> {profile.location}
+              </p>
+            )}
+
+            {profile?.bio && (
+              <p className="text-xs text-muted mb-3 px-2" style={{ lineHeight: '1.4', wordBreak: 'break-word' }}>
+                {profile.bio}
+              </p>
+            )}
 
             <div className="flex justify-between w-full border-b pb-4 mb-4" style={{ borderBottomColor: 'var(--border-color)' }}>
               <div>
@@ -75,21 +92,21 @@ function HomePage() {
             </div>
 
             <nav className="flex-col w-full text-left gap-2" style={{ display: 'flex' }}>
-              <a href="#" className="flex items-center gap-3 p-2 rounded-md" style={{ background: 'rgba(255,255,255,0.05)' }}>
+              <Link to="/" className="flex items-center gap-3 p-2 rounded-md" style={{ background: 'rgba(255,255,255,0.05)' }}>
                 <Home size={18} className="text-muted" /> Home
-              </a>
-              <a href="#" className="flex items-center gap-3 p-2 rounded-md hover-bg" style={{ transition: 'background 0.2s', ':hover': { background: 'rgba(255,255,255,0.05)' } }}>
+              </Link>
+              <Link to="/network" className="flex items-center gap-3 p-2 rounded-md hover-bg" style={{ transition: 'background 0.2s', ':hover': { background: 'rgba(255,255,255,0.05)' } }}>
                 <Users size={18} className="text-muted" /> My Network
-              </a>
+              </Link>
               <a href="#" className="flex items-center gap-3 p-2 rounded-md hover-bg">
                 <Calendar size={18} className="text-muted" /> Active Bookings
               </a>
-              <Link to="/settings" className="flex items-center gap-3 p-2 rounded-md hover-bg" style={{ textDecoration: 'none', color: 'inherit' }}>
+              <Link to="/settings" className="flex items-center gap-3 p-2 rounded-md hover-bg" style={{ transition: 'background 0.2s', ':hover': { background: 'rgba(255,255,255,0.05)' } }}>
                 <SettingsIcon size={18} className="text-muted" /> Settings
               </Link>
-              <button 
+              <button
                 onClick={signOut}
-                className="flex items-center gap-3 p-2 rounded-md hover-bg" 
+                className="flex items-center gap-3 p-2 rounded-md hover-bg"
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-primary)', width: '100%', textAlign: 'left', marginTop: '0.5rem', padding: '0.5rem' }}
               >
                 <LogOut size={18} color="#ef4444" /> Sign Out
@@ -104,7 +121,7 @@ function HomePage() {
           {/* Create Post */}
           <div className="glass-panel p-4 flex gap-4 items-center">
             <div className="w-10 h-10 rounded-full overflow-hidden flex-shrink-0">
-              <img src="https://i.pravatar.cc/150?img=11" alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <img src={profile?.avatar_url || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop'} alt="Profile" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
             <input
               type="text"

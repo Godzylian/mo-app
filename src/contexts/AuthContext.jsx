@@ -39,12 +39,35 @@ export function AuthProvider({ children }) {
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single()
+        .maybeSingle()
       
       if (error) {
-        console.error('Error fetching profile:', error)
-      } else {
+        console.error('Error fetching profile:', error.message)
+      }
+      
+      if (data) {
         setProfile(data)
+      } else {
+        // Self-healing fallback: In case the database trigger has not run yet or for legacy users
+        const { data: userData } = await supabase.auth.getUser()
+        const fallbackProfile = {
+          id: userId,
+          full_name: userData?.user?.user_metadata?.full_name || 'Member',
+          role: 'Musician',
+          bio: '',
+          connections_count: 0,
+          gigs_count: 0,
+          avatar_url: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=200&auto=format&fit=crop'
+        }
+        
+        // Attempt upsert safely
+        const { data: upserted } = await supabase
+          .from('profiles')
+          .upsert(fallbackProfile)
+          .select()
+          .maybeSingle()
+
+        setProfile(upserted || fallbackProfile)
       }
     } catch (error) {
       console.error('Error in fetchProfile:', error)
@@ -75,38 +98,66 @@ export function AuthProvider({ children }) {
   }
 
   const updateProfile = async (updates) => {
-    if (!user) return { error: { message: 'Not logged in' } };
-    
-    if (user.id === 'dev-user-id') {
-      setProfile(prev => ({ ...prev, ...updates }));
-      return { error: null };
+    if (!user) return { error: { message: 'Not authenticated' } };
+
+    // Mass-assignment protection: Whitelist permitted fields only
+    const allowedKeys = ['full_name', 'role', 'bio', 'avatar_url', 'location', 'website'];
+    const payload = {};
+
+    for (const key of allowedKeys) {
+      if (key in updates && updates[key] !== undefined) {
+        const val = updates[key];
+        payload[key] = typeof val === 'string' ? val.trim() : val;
+      }
     }
 
-    const { error } = await supabase
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.id);
-      
+    if (Object.keys(payload).length === 0) {
+      return { error: { message: 'No valid fields provided for update' } };
+    }
+
+    // Attempt saving. If the database schema lacks an optional column, automatically strip and retry.
+    let workingPayload = { ...payload };
+    let data = null;
+    let error = null;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const res = await supabase
+        .from('profiles')
+        .upsert({ id: user.id, ...workingPayload })
+        .select()
+        .maybeSingle();
+
+      if (!res.error) {
+        data = res.data || { id: user.id, ...workingPayload };
+        error = null;
+        break;
+      }
+
+      error = res.error;
+
+      // Self-healing: if Supabase error is a missing schema column, strip it and retry
+      const match = error.message?.match(/Could not find the '(.+?)' column/);
+      if (match && match[1] && match[1] in workingPayload) {
+        console.warn(`Supabase schema missing column '${match[1]}', retrying without it...`);
+        delete workingPayload[match[1]];
+      } else {
+        break;
+      }
+    }
+
     if (!error) {
-      setProfile(prev => ({ ...prev, ...updates }));
-    }
-    
-    return { error };
-  }
+      const mergedProfile = { ...(profile || {}), ...payload, ...(data || {}) };
+      setProfile(mergedProfile);
 
-  // Developer Backdoor logic
-  // This just manually sets a mock profile/user in state without hitting the database
-  const devBackdoorLogin = () => {
-    setUser({ id: 'dev-user-id', email: 'dev@m-o.app' })
-    setProfile({
-      id: 'dev-user-id',
-      full_name: 'Alex Chen (Dev Mode)',
-      role: 'Producer & Session Guitarist',
-      connections_count: 1200,
-      gigs_count: 14,
-      avatar_url: 'https://i.pravatar.cc/150?img=11'
-    })
-    setLoading(false)
+      // Synchronize full_name with auth user metadata if provided
+      if (payload.full_name) {
+        supabase.auth.updateUser({
+          data: { full_name: payload.full_name }
+        }).catch(err => console.warn('Could not sync user metadata:', err));
+      }
+    }
+
+    return { error, data };
   }
 
   const value = {
@@ -116,8 +167,7 @@ export function AuthProvider({ children }) {
     signIn,
     signUp,
     signOut,
-    updateProfile,
-    devBackdoorLogin
+    updateProfile
   }
 
   return (

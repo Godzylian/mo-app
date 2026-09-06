@@ -2,6 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import SignIn from './pages/SignIn';
 import HomePage from './pages/Home';
 import Settings from './pages/Settings';
+import NetworkPage from './pages/Network';
 import { useAuth } from './contexts/AuthContext';
 
 function App() {
@@ -25,6 +26,24 @@ function App() {
         path="/settings" 
         element={
           user ? <Settings /> : <Navigate to="/login" replace />
+        } 
+      />
+      <Route 
+        path="/network" 
+        element={
+          user ? <NetworkPage /> : <Navigate to="/login" replace />
+        } 
+      />
+      <Route 
+        path="/my-network" 
+        element={
+          user ? <NetworkPage /> : <Navigate to="/login" replace />
+        } 
+      />
+      <Route 
+        path="/my network" 
+        element={
+          user ? <NetworkPage /> : <Navigate to="/login" replace />
         } 
       />
     </Routes>
