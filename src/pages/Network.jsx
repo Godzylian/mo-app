@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { 
   Search, Users, ArrowLeft, MessageSquare, Circle, Check, X, 
   Sparkles, Music, MapPin, Send, MoreVertical, SlidersHorizontal,
-  BellRing, UserPlus, PhoneCall, Radio, CheckCheck
+  BellRing, UserPlus, PhoneCall, Radio, CheckCheck, Calendar, Mic2, Briefcase
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -305,31 +305,50 @@ export default function NetworkPage() {
             </div>
           </div>
 
-          {/* User Presence Pill */}
-          <button 
-            onClick={() => setMyPresence(prev => prev === 'online' ? 'offline' : 'online')}
-            title="Click to toggle your presence status"
-            className="flex items-center gap-2 px-3 py-1.5 rounded-full"
-            style={{ 
-              background: myPresence === 'online' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.05)', 
-              border: `1px solid ${myPresence === 'online' ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-color)'}`,
-              cursor: 'pointer',
-              transition: 'all 0.2s'
-            }}
-          >
-            <span 
+          <div className="flex items-center gap-2">
+            <Link 
+              to="/bookings" 
+              className="btn-secondary flex items-center gap-1.5"
+              style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderRadius: 'var(--radius-full)' }}
+              title="View Active Bookings"
+            >
+              <Calendar size={13} color="var(--accent-secondary)" /> Bookings
+            </Link>
+            <Link 
+              to="/auditions" 
+              className="btn-secondary flex items-center gap-1.5"
+              style={{ padding: '0.4rem 0.8rem', fontSize: '0.75rem', borderRadius: 'var(--radius-full)' }}
+              title="View Active Auditions"
+            >
+              <Mic2 size={13} color="#10b981" /> Auditions
+            </Link>
+
+            {/* User Presence Pill */}
+            <button 
+              onClick={() => setMyPresence(prev => prev === 'online' ? 'offline' : 'online')}
+              title="Click to toggle your presence status"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-full"
               style={{ 
-                width: '8px', 
-                height: '8px', 
-                borderRadius: '50%', 
-                background: myPresence === 'online' ? '#10b981' : '#94a3b8',
-                boxShadow: myPresence === 'online' ? '0 0 8px #10b981' : 'none'
-              }} 
-            />
-            <span className="text-xs font-medium" style={{ color: myPresence === 'online' ? '#10b981' : 'var(--text-secondary)' }}>
-              {myPresence === 'online' ? 'Active' : 'Offline'}
-            </span>
-          </button>
+                background: myPresence === 'online' ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255,255,255,0.05)', 
+                border: `1px solid ${myPresence === 'online' ? 'rgba(16, 185, 129, 0.3)' : 'var(--border-color)'}`,
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              <span 
+                style={{ 
+                  width: '8px', 
+                  height: '8px', 
+                  borderRadius: '50%', 
+                  background: myPresence === 'online' ? '#10b981' : '#94a3b8',
+                  boxShadow: myPresence === 'online' ? '0 0 8px #10b981' : 'none'
+                }} 
+              />
+              <span className="text-xs font-medium" style={{ color: myPresence === 'online' ? '#10b981' : 'var(--text-secondary)' }}>
+                {myPresence === 'online' ? 'Active' : 'Offline'}
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Search Bar */}

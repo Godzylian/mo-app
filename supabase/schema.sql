@@ -68,3 +68,68 @@ DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 CREATE TRIGGER on_auth_user_created
   AFTER INSERT ON auth.users
   FOR EACH ROW EXECUTE FUNCTION public.handle_new_user();
+
+-- 5. Create posts table for the Community Feed
+CREATE TABLE IF NOT EXISTS public.posts (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
+  content TEXT NOT NULL,
+  post_type TEXT DEFAULT 'general', -- 'general', 'booking', 'audition'
+  media_url TEXT DEFAULT '',
+  likes_count INT DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Foreign key link to profiles for joined queries
+ALTER TABLE public.posts 
+  DROP CONSTRAINT IF EXISTS fk_posts_profiles,
+  ADD CONSTRAINT fk_posts_profiles FOREIGN KEY (user_id) REFERENCES public.profiles(id) ON DELETE CASCADE;
+
+-- Enable Row Level Security (RLS) on posts
+ALTER TABLE public.posts ENABLE ROW LEVEL SECURITY;
+
+-- RLS: Everyone can read public posts
+DROP POLICY IF EXISTS "Posts are viewable by everyone" ON public.posts;
+CREATE POLICY "Posts are viewable by everyone"
+  ON public.posts FOR SELECT
+  USING (true);
+
+-- RLS: Authenticated users can insert their own posts
+DROP POLICY IF EXISTS "Users can insert their own posts" ON public.posts;
+CREATE POLICY "Users can insert their own posts"
+  ON public.posts FOR INSERT
+  TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+
+-- RLS: Users can update their own posts
+DROP POLICY IF EXISTS "Users can update their own posts" ON public.posts;
+CREATE POLICY "Users can update their own posts"
+  ON public.posts FOR UPDATE
+  TO authenticated
+  USING (auth.uid() = user_id)
+  WITH CHECK (auth.uid() = user_id);
+
+-- RLS: Users can delete their own posts
+DROP POLICY IF EXISTS "Users can delete their own posts" ON public.posts;
+CREATE POLICY "Users can delete their own posts"
+  ON public.posts FOR DELETE
+  TO authenticated
+  USING (auth.uid() = user_id);
+
+-- Optional: Supabase Storage Bucket for post attachments (PDFs, Audio up to 60 min, Videos, Images)
+INSERT INTO storage.buckets (id, name, public) 
+VALUES ('post-media', 'post-media', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+DROP POLICY IF EXISTS "Public Post Media Access" ON storage.objects;
+CREATE POLICY "Public Post Media Access"
+  ON storage.objects FOR SELECT
+  USING (bucket_id = 'post-media');
+
+DROP POLICY IF EXISTS "Authenticated users can upload post media" ON storage.objects;
+CREATE POLICY "Authenticated users can upload post media"
+  ON storage.objects FOR INSERT
+  TO authenticated
+  WITH CHECK (bucket_id = 'post-media');
+
