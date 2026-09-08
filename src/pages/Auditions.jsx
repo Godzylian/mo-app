@@ -1,13 +1,13 @@
 import { useState, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { 
-  ArrowLeft, Calendar as CalendarIcon, Clock, MapPin, 
+  ArrowLeft, Calendar as CalendarIcon, Clock, MapPin,  //icons
   Mic2, Plus, Lock, Globe, X, ChevronLeft, ChevronRight, 
   Check, MessageSquare, Sparkles, FileText, UserCheck, Star
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
-const INITIAL_AUDITIONS = [
+const INITIAL_AUDITIONS = [ //seed posts
   {
     id: 'a-1',
     role: 'Lead Touring Guitarist',

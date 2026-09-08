@@ -94,14 +94,23 @@ export function AuthProvider({ children }) {
   }
 
   const signOut = async () => {
-    return supabase.auth.signOut()
+    try {
+      const channels = supabase.getChannels();
+      for (const ch of channels) {
+        try {
+          await ch.untrack();
+          await ch.unsubscribe();
+        } catch (_) {}
+      }
+    } catch (_) {}
+    return supabase.auth.signOut();
   }
 
   const updateProfile = async (updates) => {
     if (!user) return { error: { message: 'Not authenticated' } };
 
     // Mass-assignment protection: Whitelist permitted fields only
-    const allowedKeys = ['full_name', 'role', 'bio', 'avatar_url', 'location', 'website'];
+    const allowedKeys = ['full_name', 'role', 'bio', 'avatar_url', 'location', 'website', 'require_connection_request'];
     const payload = {};
 
     for (const key of allowedKeys) {
@@ -119,6 +128,7 @@ export function AuthProvider({ children }) {
     let workingPayload = { ...payload };
     let data = null;
     let error = null;
+    let missingColumns = [];
 
     for (let attempt = 0; attempt < 3; attempt++) {
       const res = await supabase
@@ -139,6 +149,7 @@ export function AuthProvider({ children }) {
       const match = error.message?.match(/Could not find the '(.+?)' column/);
       if (match && match[1] && match[1] in workingPayload) {
         console.warn(`Supabase schema missing column '${match[1]}', retrying without it...`);
+        missingColumns.push(match[1]);
         delete workingPayload[match[1]];
       } else {
         break;
@@ -157,8 +168,87 @@ export function AuthProvider({ children }) {
       }
     }
 
-    return { error, data };
+    return { error, data, missingColumns };
   }
+
+  const refreshProfile = async () => {
+    if (user?.id) {
+      await fetchProfile(user.id);
+    }
+  };
+
+  const syncConnectionsCount = async () => {
+    if (!user?.id) return;
+    try {
+      const { data, error } = await supabase
+        .from('connections')
+        .select('user_id, connected_user_id')
+        .or(`user_id.eq.${user.id},connected_user_id.eq.${user.id}`);
+
+      if (!error && data) {
+        const partnerIds = new Set();
+        data.forEach(item => {
+          if (item.user_id === user.id && item.connected_user_id) {
+            partnerIds.add(item.connected_user_id);
+          } else if (item.connected_user_id === user.id && item.user_id) {
+            partnerIds.add(item.user_id);
+          }
+        });
+        const count = partnerIds.size;
+        setProfile(prev => {
+          if (!prev || prev.connections_count === count) return prev;
+          return { ...prev, connections_count: count };
+        });
+        await supabase
+          .from('profiles')
+          .update({ connections_count: count })
+          .eq('id', user.id);
+      }
+    } catch (err) {
+      console.warn('Could not sync connections count:', err);
+    }
+  };
+
+  const updateConnectionsCount = (delta) => {
+    setProfile(prev => {
+      if (!prev) return prev;
+      const current = prev.connections_count || 0;
+      return { ...prev, connections_count: Math.max(0, current + delta) };
+    });
+  };
+
+  // Listen for realtime updates to current user's profile
+  useEffect(() => {
+    if (!user?.id) return;
+
+    // Immediately synchronize exact count from connections table on mount
+    syncConnectionsCount();
+
+    const channel = supabase
+      .channel(`user_profile_${user.id}`)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'profiles',
+        filter: `id=eq.${user.id}`
+      }, (payload) => {
+        if (payload.new) {
+          setProfile(prev => ({ ...(prev || {}), ...payload.new }));
+        }
+      })
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'connections'
+      }, () => {
+        syncConnectionsCount();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [user?.id]);
 
   const value = {
     user,
@@ -167,7 +257,11 @@ export function AuthProvider({ children }) {
     signIn,
     signUp,
     signOut,
-    updateProfile
+    updateProfile,
+    refreshProfile,
+    updateConnectionsCount,
+    syncConnectionsCount,
+    setProfile
   }
 
   return (

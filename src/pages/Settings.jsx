@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, MapPin, CheckCircle2, AlertCircle, Loader2, User } from 'lucide-react';
+import { ArrowLeft, Save, MapPin, CheckCircle2, AlertCircle, Loader2, User, Users, Sparkles, X } from 'lucide-react';
 
 const PRESET_AVATARS = [
   { label: 'Studio Producer', url: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?q=80&w=200&auto=format&fit=crop' },
@@ -10,6 +10,69 @@ const PRESET_AVATARS = [
   { label: 'DJ / Beatmaker', url: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?q=80&w=200&auto=format&fit=crop' },
   { label: 'Songwriter', url: 'https://images.unsplash.com/photo-1524504388940-b1c1722653e1?q=80&w=200&auto=format&fit=crop' },
 ];
+
+const CONNECTION_REQUESTS_SQL = `-- Run this in your Supabase SQL Editor:
+
+-- 1. Add privacy toggle column to profiles
+ALTER TABLE public.profiles 
+  ADD COLUMN IF NOT EXISTS require_connection_request BOOLEAN DEFAULT FALSE;
+
+-- 2. Create connection_requests table
+CREATE TABLE IF NOT EXISTS public.connection_requests (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  sender_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  receiver_id UUID REFERENCES public.profiles(id) ON DELETE CASCADE NOT NULL,
+  status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'accepted', 'declined')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(sender_id, receiver_id)
+);
+
+-- 3. If columns were previously named requester_id or target_id, rename them
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name='connection_requests' AND column_name='requester_id'
+  ) THEN
+    ALTER TABLE public.connection_requests RENAME COLUMN requester_id TO sender_id;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.columns 
+    WHERE table_name='connection_requests' AND column_name='target_id'
+  ) THEN
+    ALTER TABLE public.connection_requests RENAME COLUMN target_id TO receiver_id;
+  END IF;
+END $$;
+
+-- 4. Enable Row Level Security and Policies
+ALTER TABLE public.connection_requests ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Connection requests viewable by sender or receiver" ON public.connection_requests;
+CREATE POLICY "Connection requests viewable by sender or receiver" ON public.connection_requests
+  FOR SELECT TO authenticated USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
+
+DROP POLICY IF EXISTS "Users can send connection requests" ON public.connection_requests;
+CREATE POLICY "Users can send connection requests" ON public.connection_requests
+  FOR INSERT TO authenticated WITH CHECK (auth.uid() = sender_id);
+
+DROP POLICY IF EXISTS "Users can update received connection requests" ON public.connection_requests;
+CREATE POLICY "Users can update received connection requests" ON public.connection_requests
+  FOR UPDATE TO authenticated USING (auth.uid() = receiver_id);
+
+DROP POLICY IF EXISTS "Users can delete their connection requests" ON public.connection_requests;
+CREATE POLICY "Users can delete their connection requests" ON public.connection_requests
+  FOR DELETE TO authenticated USING (auth.uid() = sender_id OR auth.uid() = receiver_id);
+
+-- 5. Enable Realtime on connection_requests
+DO $$
+BEGIN
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.connection_requests;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+END $$;
+`;
 
 export default function Settings() {
   const { profile, updateProfile } = useAuth();
@@ -20,10 +83,19 @@ export default function Settings() {
   const [bio, setBio] = useState('');
   const [location, setLocation] = useState('');
   const [avatarUrl, setAvatarUrl] = useState('');
+  const [requireConnectionRequest, setRequireConnectionRequest] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [showSqlGuide, setShowSqlGuide] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(CONNECTION_REQUESTS_SQL);
+    setCopiedSql(true);
+    setTimeout(() => setCopiedSql(false), 3000);
+  };
 
   // Populate form fields when profile state loads
   useEffect(() => {
@@ -33,6 +105,7 @@ export default function Settings() {
       setBio(profile.bio || '');
       setLocation(profile.location || '');
       setAvatarUrl(profile.avatar_url || PRESET_AVATARS[0].url);
+      setRequireConnectionRequest(Boolean(profile.require_connection_request));
     }
   }, [profile]);
 
@@ -60,13 +133,20 @@ export default function Settings() {
     setLoading(true);
 
     try {
-      const { error: updateError } = await updateProfile({
+      const { error: updateError, missingColumns } = await updateProfile({
         full_name: cleanName,
         role: cleanRole || 'Musician',
         bio: cleanBio,
         location: cleanLocation,
-        avatar_url: cleanAvatar || PRESET_AVATARS[0].url
+        avatar_url: cleanAvatar || PRESET_AVATARS[0].url,
+        require_connection_request: requireConnectionRequest
       });
+
+      if (missingColumns && missingColumns.includes('require_connection_request')) {
+        setShowSqlGuide(true);
+        setError('⚠️ Profile updated, but your Supabase database is missing the require_connection_request column. Run the SQL migration below in your Supabase SQL Editor to save this privacy setting.');
+        return;
+      }
 
       if (updateError) {
         setError(updateError.message || 'Failed to update profile.');
@@ -99,6 +179,49 @@ export default function Settings() {
             Back to Feed
           </Link>
         </div>
+
+        {/* Database Migration Guide Alert */}
+        {showSqlGuide && (
+          <div
+            className="glass-panel p-4 mb-4"
+            style={{
+              background: 'rgba(139, 92, 246, 0.12)',
+              border: '1px solid rgba(139, 92, 246, 0.4)',
+              borderRadius: 'var(--radius-md)',
+              fontSize: '0.85rem'
+            }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-bold flex items-center gap-1.5" style={{ color: 'var(--accent-secondary)' }}>
+                <Sparkles size={16} /> Supabase Setup Required for Connection Privacy
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowSqlGuide(false)}
+                className="text-muted hover-text-primary"
+                style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '0.2rem' }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <p className="m-0 text-muted mb-3" style={{ lineHeight: 1.5 }}>
+              To save your <strong>Connection Approval</strong> setting and enable incoming connection requests, your Supabase database needs the <code>require_connection_request</code> column and <code>connection_requests</code> table. Copy and run the script below in your <strong>Supabase SQL Editor</strong>.
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCopySql}
+                className="btn-primary flex items-center gap-1.5 text-xs font-bold"
+                style={{ padding: '0.45rem 1rem', borderRadius: 'var(--radius-full)' }}
+              >
+                {copiedSql ? '✓ Copied to Clipboard!' : 'Copy Supabase SQL Script'}
+              </button>
+              <span className="text-xs text-muted" style={{ opacity: 0.8 }}>
+                Paste into Supabase SQL Editor & click Run
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Live Profile Card Preview */}
         <div className="glass-panel p-4 mb-4" style={{ textAlign: 'center', background: 'rgba(255,255,255,0.03)' }}>
@@ -350,6 +473,88 @@ export default function Settings() {
                 resize: 'vertical'
               }}
             />
+          </div>
+
+          {/* Networking & Connection Privacy */}
+          <div 
+            className="p-4 rounded-xl flex-col gap-3" 
+            style={{ 
+              display: 'flex', 
+              background: 'rgba(139, 92, 246, 0.07)', 
+              border: '1px solid rgba(139, 92, 246, 0.25)',
+              borderRadius: 'var(--radius-md)'
+            }}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div 
+                  className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+                  style={{ background: 'rgba(139, 92, 246, 0.15)', color: 'var(--accent-secondary)' }}
+                >
+                  <Users size={20} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold m-0" style={{ color: 'var(--text-primary)' }}>
+                    Require Connection Requests
+                  </h3>
+                  <p className="text-xs text-muted m-0 mt-0.5" style={{ lineHeight: 1.4 }}>
+                    When enabled, other musicians cannot connect with you directly. They must send a request that you can approve or ignore in <strong>My Network</strong>.
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle Switch */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={requireConnectionRequest}
+                onClick={() => setRequireConnectionRequest(prev => !prev)}
+                style={{
+                  width: '48px',
+                  height: '26px',
+                  borderRadius: '13px',
+                  background: requireConnectionRequest ? 'var(--accent-gradient)' : 'rgba(255, 255, 255, 0.15)',
+                  position: 'relative',
+                  border: 'none',
+                  cursor: 'pointer',
+                  flexShrink: 0,
+                  transition: 'background 0.25s ease',
+                  padding: '2px'
+                }}
+                title={requireConnectionRequest ? 'Connection approval required (Click to disable)' : 'Direct connections allowed (Click to enable)'}
+              >
+                <div
+                  style={{
+                    width: '22px',
+                    height: '22px',
+                    borderRadius: '50%',
+                    background: 'white',
+                    position: 'absolute',
+                    top: '2px',
+                    left: requireConnectionRequest ? '24px' : '2px',
+                    transition: 'left 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.3)'
+                  }}
+                />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1 text-xs" style={{ color: requireConnectionRequest ? 'var(--accent-secondary)' : 'var(--text-secondary)' }}>
+              <span 
+                style={{ 
+                  display: 'inline-block', 
+                  width: '7px', 
+                  height: '7px', 
+                  borderRadius: '50%', 
+                  background: requireConnectionRequest ? '#10b981' : '#64748b' 
+                }} 
+              />
+              <span>
+                {requireConnectionRequest 
+                  ? 'Active: Connection requests will appear in your "Connection Requests" queue in My Network.' 
+                  : 'Open Network: Other users can connect with you immediately without manual approval.'}
+              </span>
+            </div>
           </div>
 
           {/* Actions */}
